@@ -38,4 +38,4 @@ You’ll see:
 - Expected 21-day excess move (%)
 - Interactive closing-price chart
   Open the app in your browser (usually http://localhost:8501).
-- python app.py
+- streamlit run app.py
