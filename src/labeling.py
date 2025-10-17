@@ -1,7 +1,9 @@
-# src/labeling.py
 import pandas as pd
 
 def make_labels(df: pd.DataFrame, horizon_days=21) -> pd.DataFrame:
+    """
+    Create classification and regression labels for excess returns.
+    """
     df = df.copy()
     df["stock_ret_fwd"] = df["close"].shift(-horizon_days)/df["close"] - 1
     df["spy_ret_fwd"]   = df["close_spy"].shift(-horizon_days)/df["close_spy"] - 1

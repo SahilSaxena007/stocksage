@@ -1,4 +1,3 @@
-# src/features.py
 import pandas as pd, numpy as np
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
@@ -19,11 +18,19 @@ def add_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     return df.dropna().reset_index(drop=True)
 
 def build_feature_matrix(stock_df: pd.DataFrame, spy_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Combine stock and S&P500 features into one aligned matrix.
+    """
     s = add_technical_features(stock_df)
     m = add_technical_features(spy_df)
-    full = pd.merge(s, m[["date","close","ret1"]],
-                    on="date", how="inner", suffixes=("", "_spy"))
+    full = pd.merge(
+        s,
+        m[["date", "close", "ret1"]],
+        on="date",
+        how="inner",
+        suffixes=("", "_spy")
+    )
     full["cov60"]  = full["ret1"].rolling(60).cov(full["ret1_spy"])
     full["var60"]  = full["ret1_spy"].rolling(60).var()
-    full["beta60"] = full["cov60"]/full["var60"]
+    full["beta60"] = full["cov60"] / full["var60"]
     return full.dropna().reset_index(drop=True)

@@ -1,78 +1,84 @@
-import pandas as pd, numpy as np, os, json, argparse, pickle
-from datetime import datetime
+import os
+import json
+import pickle
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from ta.momentum import RSIIndicator
+from ta.trend import MACD, SMAIndicator
+from ta.volatility import AverageTrueRange
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import accuracy_score, roc_auc_score, mean_absolute_error
 
-# local imports
-from ingest import load_prices
-from features import build_feature_matrix
-from labeling import make_labels
+TICKERS = [
+    "AAPL","MSFT","AMZN","GOOGL","META","NVDA",
+    "JPM","GS","MS","BAC","C","WFC",
+    "XOM","CVX","KO","MCD","NKE","UNH","BABA","TSLA"
+]
 
+def fetch_yf(ticker):
+    df = yf.download(ticker, period="2y", interval="1d", progress=False, auto_adjust=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = ['_'.join(str(c) for c in tup if c).strip().lower() for tup in df.columns.values]
+    else:
+        df.columns = [str(c).lower() for c in df.columns]
+    df = df.reset_index()
+    df.rename(columns={df.columns[0]: "date"}, inplace=True)
+    for col in ["open", "high", "low", "close", "volume"]:
+        matches = [c for c in df.columns if col in c]
+        if matches:
+            df[col] = df[matches[0]]
+    return df[["date","open","high","low","close","volume"]].dropna()
 
-def train_one(ticker="AAPL", start="2012-01-01", benchmark="SPY", horizon=21):
-    """Full training pipeline for one ticker."""
-    print(f"\n▶️ Training {ticker} vs {benchmark} horizon={horizon} days")
+def engineer(df):
+    df["ret1"] = df["close"].pct_change()
+    for w in (5,10,20):
+        df[f"ret{w}"] = df["close"].pct_change(w)
+        df[f"vol{w}"] = df["ret1"].rolling(w).std()
+    for w in (10,20,50,200):
+        sma = SMAIndicator(df["close"], w).sma_indicator()
+        df[f"sma{w}"] = sma
+        df[f"sma{w}_ratio"] = df["close"]/sma
+    df["rsi14"] = RSIIndicator(df["close"],14).rsi()
+    df["macd"] = MACD(df["close"]).macd()
+    df["atr14"] = AverageTrueRange(df["high"],df["low"],df["close"],14).average_true_range()
+    df["ret21"] = df["close"].pct_change(21)
+    df = df.dropna().reset_index(drop=True)
+    return df
 
-    # --- 1. Load data ---
-    stock_df = load_prices(ticker, start)
-    spy_df   = load_prices(benchmark, start)
+def train_one(ticker):
+    print(f"Training {ticker}...")
+    df = engineer(fetch_yf(ticker))
+    df["target_cls"] = (df["ret21"] > 0).astype(int)
+    X = df.drop(columns=["date","ret21","target_cls"])
+    y_cls = df["target_cls"]
+    y_reg = df["ret21"]
 
-    # --- 2. Build features & labels ---
-    df = build_feature_matrix(stock_df, spy_df)
-    df = make_labels(df, horizon_days=horizon)
-
-    FEATURES = [
-        c for c in df.columns
-        if c not in ["date","ticker","stock_ret_fwd","spy_ret_fwd","excess_ret","y_cls","y_reg"]
-    ]
-    X = df[FEATURES]; y_cls = df["y_cls"]; y_reg = df["y_reg"]
-
-    # --- 3. Classification model (direction) ---
-    cls = Pipeline([
-        ("sc", StandardScaler()),
-        ("lr", LogisticRegression(
-            penalty="l1", C=1.0, solver="liblinear", class_weight="balanced"))
+    pipe_cls = Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", LogisticRegression(max_iter=1000))
     ])
-    cls.fit(X, y_cls)
-    acc = accuracy_score(y_cls, cls.predict(X))
-    auc = roc_auc_score(y_cls, cls.predict_proba(X)[:,1])
-
-    # --- 4. Regression model (magnitude) ---
-    reg = Pipeline([
-        ("sc", StandardScaler()),
-        ("rf", RandomForestRegressor(
-            n_estimators=300, random_state=0, n_jobs=-1))
+    pipe_reg = Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", LinearRegression())
     ])
-    reg.fit(X, y_reg)
-    mae = mean_absolute_error(y_reg, reg.predict(X))
 
-    # --- 5. Save artifacts ---
-    model_dir = f"artifacts/models/{ticker}"
-    os.makedirs(model_dir, exist_ok=True)
-    with open(f"{model_dir}/cls.pkl","wb") as f: pickle.dump(cls,f)
-    with open(f"{model_dir}/reg.pkl","wb") as f: pickle.dump(reg,f)
-    with open(f"{model_dir}/features.json","w") as f: json.dump(FEATURES,f, indent=2)
+    pipe_cls.fit(X, y_cls)
+    pipe_reg.fit(X, y_reg)
 
-    report = {
-        "ticker": ticker,
-        "train_rows": len(df),
-        "horizon_days": horizon,
-        "timestamp": datetime.utcnow().isoformat(),
-        "metrics": {"acc":acc,"auc":auc,"mae":mae}
-    }
-    os.makedirs("artifacts/reports", exist_ok=True)
-    with open(f"artifacts/reports/{ticker}_report.json","w") as f: json.dump(report,f, indent=2)
-    print(f"[{ticker}] acc={acc:.3f} auc={auc:.3f} mae={mae:.4f}")
-    print(f"Models saved to {model_dir}")
-    return report
+    # ✅ artifacts directory is now outside src
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    artifacts_dir = os.path.join(base_dir, "artifacts", "models", ticker)
+    os.makedirs(artifacts_dir, exist_ok=True)
 
+    pickle.dump(pipe_cls, open(os.path.join(artifacts_dir, "cls.pkl"), "wb"))
+    pickle.dump(pipe_reg, open(os.path.join(artifacts_dir, "reg.pkl"), "wb"))
+    json.dump(list(X.columns), open(os.path.join(artifacts_dir, "features.json"), "w"))
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--ticker", required=True)
-    ap.add_argument("--start", default="2012-01-01")
-    args = ap.parse_args()
-    train_one(args.ticker, start=args.start)
+for t in TICKERS:
+    try:
+        train_one(t)
+    except Exception as e:
+        print(f"❌ {t}: {e}")
