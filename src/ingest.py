@@ -42,7 +42,6 @@ def load_prices(ticker: str, start="2012-01-01", cache_dir="data/raw", allow_syn
     """
     Load prices for a given ticker, caching outside src/.
     """
-    # ✅ Make path relative to project root, not src
     base_dir = Path(__file__).resolve().parents[1]
     cache_root = base_dir / cache_dir
     cache_root.mkdir(parents=True, exist_ok=True)

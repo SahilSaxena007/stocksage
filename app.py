@@ -43,7 +43,7 @@ try:
     reg = pickle.load(open(f"{model_dir}/reg.pkl", "rb"))
     FEATURES = json.load(open(f"{model_dir}/features.json"))
 except Exception as e:
-    st.error(f"❌ Could not load model artifacts for {ticker}: {e}")
+    st.error(f"Could not load model artifacts for {ticker}: {e}")
     st.stop()
 
 metrics = {}

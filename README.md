@@ -26,7 +26,7 @@ This automatically:
 - Engineers technical features and excess returns
 - Trains logistic (direction) and linear (magnitude) models
 - Saves results in artifacts/models/<TICKER>/
-  python .\src\train.py
+- python .\src\train.py
 
 ### 2. Run the Prediction Dashboard (app.py)
 
@@ -38,4 +38,4 @@ You’ll see:
 - Expected 21-day excess move (%)
 - Interactive closing-price chart
   Open the app in your browser (usually http://localhost:8501).
-  python app.py
+- python app.py

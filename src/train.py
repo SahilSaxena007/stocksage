@@ -67,8 +67,7 @@ def train_one(ticker):
 
     pipe_cls.fit(X, y_cls)
     pipe_reg.fit(X, y_reg)
-
-    # ✅ artifacts directory is now outside src
+    
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     artifacts_dir = os.path.join(base_dir, "artifacts", "models", ticker)
     os.makedirs(artifacts_dir, exist_ok=True)
